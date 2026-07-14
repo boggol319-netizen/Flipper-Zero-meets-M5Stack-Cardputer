@@ -139,7 +139,7 @@ jobs:
         run: |
           source ~/esp/esp-idf/export.sh
           chmod +x ./build.sh
-          ./build.sh --board cardputer_adv
+          ./build.sh --board cardputer_adv --build-only
 
       - name: Stage dodep.bin
         run: |
