@@ -179,6 +179,18 @@ jobs:
         run: |
           rm -rf port_apps/key_copier
 
+      - name: Exclude 'key_copier' from app build list (fam_config.py)
+        run: |
+          python3 - <<'PY'
+          p = "fam_config.py"
+          s = open(p, encoding="utf-8").read()
+          old = '    "js_blebeacon",\n    # js_serial, js_gpio, js_i2c, js_spi excluded - need HAL porting\n    "key_copier",\n'
+          new = '    "js_blebeacon",\n    # js_serial, js_gpio, js_i2c, js_spi excluded - need HAL porting\n'
+          assert s.count(old) == 1, "key_copier anchor not found in fam_config.py"
+          open(p, "w", encoding="utf-8").write(s.replace(old, new))
+          print("removed key_copier from APPS")
+          PY
+
       - name: Build cardputer_adv (build + merge)
         run: |
           source ~/esp/esp-idf/export.sh
