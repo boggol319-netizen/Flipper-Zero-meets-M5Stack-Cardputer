@@ -175,6 +175,10 @@ jobs:
                   print("added placeholder icon:", os.path.join(assets_dir, icon_name))
           PY
 
+      - name: Drop broken stock app 'key_copier' (V1.15 is missing key_formats.h/icon)
+        run: |
+          rm -rf port_apps/key_copier
+
       - name: Build cardputer_adv (build + merge)
         run: |
           source ~/esp/esp-idf/export.sh
