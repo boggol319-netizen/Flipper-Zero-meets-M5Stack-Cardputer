@@ -136,6 +136,45 @@ jobs:
           rm -f sdkconfig
           rm -f build_cardputer_adv/sdkconfig
 
+      - name: Ensure Pillow (FAP icon generation needs it)
+        run: |
+          PY="$HOME/.espressif/python_env/idf5.4_py3.12_env/bin/python"
+          if [ -x "$PY" ]; then "$PY" -m pip install --quiet pillow || true; else python3 -m pip install --quiet pillow || true; fi
+
+      - name: Provide missing app icon assets (stock board build fix)
+        run: |
+          python3 - <<'PY'
+          import os, re, base64
+          ICON_B64 = "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAFElEQVR42mP4TyJgGNUwqmH4agAAr639H23ooMoAAAAASUVORK5CYII="
+          png = base64.b64decode(ICON_B64)
+          roots = ["applications", "port_apps", "applications_user"]
+          for root in roots:
+              if not os.path.isdir(root):
+                  continue
+              for dirpath, dirnames, filenames in os.walk(root):
+                  fam = next((f for f in filenames if f.endswith(".fam")), None)
+                  if not fam:
+                      continue
+                  txt = open(os.path.join(dirpath, fam), encoding="utf-8").read()
+                  m = re.search(r'fap_icon_assets\s*=\s*"([^"]+)"', txt)
+                  if not m:
+                      continue
+                  assets_dir = os.path.join(dirpath, m.group(1))
+                  has_png = os.path.isdir(assets_dir) and any(
+                      fn.endswith(".png") for fn in os.listdir(assets_dir)
+                  )
+                  if has_png:
+                      continue
+                  os.makedirs(assets_dir, exist_ok=True)
+                  im = re.search(r'fap_icon\s*=\s*"([^"]+)"', txt)
+                  icon_name = im.group(1) if im else "icon.png"
+                  if not icon_name.endswith(".png"):
+                      icon_name += ".png"
+                  with open(os.path.join(assets_dir, icon_name), "wb") as fh:
+                      fh.write(png)
+                  print("added placeholder icon:", os.path.join(assets_dir, icon_name))
+          PY
+
       - name: Build cardputer_adv (build + merge)
         run: |
           source ~/esp/esp-idf/export.sh
