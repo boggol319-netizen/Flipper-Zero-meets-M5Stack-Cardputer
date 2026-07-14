@@ -1,0 +1,158 @@
+name: dodep_build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [dodep]
+
+jobs:
+  build:
+    name: Build cardputer_adv (dodep pins)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install ESP-IDF system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git wget flex bison gperf python3 python3-pip python3-venv \
+            cmake ninja-build ccache libffi-dev libssl-dev dfu-util \
+            libusb-1.0-0 libglib2.0-dev
+
+      - name: Cache ESP-IDF
+        uses: actions/cache@v4
+        id: idf-cache
+        with:
+          path: ~/esp/esp-idf
+          key: esp-idf-v5.4.1
+
+      - name: Clone ESP-IDF v5.4.1
+        if: steps.idf-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/esp
+          git clone --branch v5.4.1 --depth 1 \
+            https://github.com/espressif/esp-idf.git ~/esp/esp-idf
+
+      - name: Cache ESP-IDF tools
+        uses: actions/cache@v4
+        id: idf-tools-cache
+        with:
+          path: ~/.espressif
+          key: esp-idf-tools-v5.4.1
+
+      - name: Install ESP-IDF tools
+        if: steps.idf-tools-cache.outputs.cache-hit != 'true'
+        run: |
+          ~/esp/esp-idf/install.sh all
+
+      - name: Apply dodep pin + NRF24/keyboard multiplexing patch
+        run: |
+          python3 - <<'PY'
+          import io, sys
+
+          def patch(path, replacements):
+              with open(path, 'r', encoding='utf-8') as f:
+                  s = f.read()
+              for i, (old, new) in enumerate(replacements):
+                  cnt = s.count(old)
+                  if cnt != 1:
+                      raise SystemExit("ERROR: anchor %d in %s matched %d times (expected 1)" % (i, path, cnt))
+                  s = s.replace(old, new)
+              with open(path, 'w', encoding='utf-8') as f:
+                  f.write(s)
+              print("patched:", path)
+
+          # ---- Board header: CC1101 + NRF24 pins ----
+          board = "components/furi_hal/boards/board_m5stack_cardputer_adv.h"
+          patch(board, [
+              ("#define BOARD_PIN_CC1101_CSN    13\n",
+               "#define BOARD_PIN_CC1101_CSN    15\n"),
+              ("#define BOARD_PIN_CC1101_GDO0   5\n",
+               "#define BOARD_PIN_CC1101_GDO0   13\n"),
+              ("#define BOARD_PIN_NRF24_CSN     6\n",
+               "#define BOARD_PIN_NRF24_CSN     9\n"),
+              ("#define BOARD_PIN_NRF24_CE      4\n",
+               "#define BOARD_PIN_NRF24_CE      8\n"),
+          ])
+
+          # ---- target_input.c: GPIO8/9 multiplexing (keyboard I2C <-> NRF24) ----
+          ti = "targets/m5stack_cardputer_adv/target_input.c"
+          release_fn = '''static void kb_i2c_release(void) {
+              if (kb_i2c_installed) {
+                  i2c_driver_delete(KB_I2C_PORT);
+                  kb_i2c_installed = false;
+              }
+              gpio_reset_pin(KB_PIN_SDA);
+              gpio_reset_pin(KB_PIN_SCL);
+              gpio_set_direction(KB_PIN_SDA, GPIO_MODE_OUTPUT);
+              gpio_set_direction(KB_PIN_SCL, GPIO_MODE_OUTPUT);
+              gpio_set_level(KB_PIN_SDA, 1); /* NRF24 CSN high (deselected) */
+              gpio_set_level(KB_PIN_SCL, 0); /* NRF24 CE low */
+          }
+          '''
+          patch(ti, [
+              (# after kb_i2c_install() definition
+               "    kb_i2c_installed = true;\n"
+               "    ESP_LOGI(TAG, \"TCA8418 legacy I2C on GPIO%d/GPIO%d (port %d)\", KB_PIN_SDA, KB_PIN_SCL, KB_I2C_PORT);\n"
+               "    return ESP_OK;\n"
+               "}\n",
+               "    kb_i2c_installed = true;\n"
+               "    ESP_LOGI(TAG, \"TCA8418 legacy I2C on GPIO%d/GPIO%d (port %d)\", KB_PIN_SDA, KB_PIN_SCL, KB_I2C_PORT);\n"
+               "    return ESP_OK;\n"
+               "}\n\n" + release_fn),
+              (# end of target_input_init()
+               "             TCA_KEY_DARROW, TCA_KEY_LARROW, TCA_KEY_RARROW);\n"
+               "}\n",
+               "             TCA_KEY_DARROW, TCA_KEY_LARROW, TCA_KEY_RARROW);\n\n"
+               "    /* Release SDA/SCL (GPIO8/9) back to NRF24 until the first poll. */\n"
+               "    kb_i2c_release();\n"
+               "}\n"),
+              (# start of target_input_poll()
+               "    uint32_t repeat_ticks     = furi_ms_to_ticks(INPUT_REPEAT_MS);\n\n",
+               "    uint32_t repeat_ticks     = furi_ms_to_ticks(INPUT_REPEAT_MS);\n\n"
+               "    /* Re-acquire keyboard I2C (GPIO8/9) before reading; released at poll end. */\n"
+               "    kb_i2c_install();\n\n"),
+              (# before long_press_check
+               "    /* Clear interrupt flag after draining */\n"
+               "    tca_write(TCA8418_REG_INT_STAT, 0x01);\n\n"
+               "long_press_check:\n",
+               "    /* Clear interrupt flag after draining */\n"
+               "    tca_write(TCA8418_REG_INT_STAT, 0x01);\n\n"
+               "    /* Release SDA/SCL (GPIO8/9) back to NRF24 until the next poll. */\n"
+               "    kb_i2c_release();\n\n"
+               "long_press_check:\n"),
+          ])
+          print("ALL PATCHES APPLIED OK")
+          PY
+
+      - name: Clean stale sdkconfig
+        run: |
+          rm -f sdkconfig
+          rm -f build_cardputer_adv/sdkconfig
+
+      - name: Build cardputer_adv (build + merge)
+        run: |
+          source ~/esp/esp-idf/export.sh
+          chmod +x ./build.sh
+          ./build.sh --board cardputer_adv
+
+      - name: Stage dodep.bin
+        run: |
+          if [ -f Flipper-cardputer_adv-merged.bin ]; then
+            cp Flipper-cardputer_adv-merged.bin dodep.bin
+            ls -lh dodep.bin
+          else
+            echo "MERGED BINARY NOT FOUND"; ls -lh . ; exit 1
+          fi
+
+      - name: Upload dodep.bin
+        uses: actions/upload-artifact@v4
+        with:
+          name: dodep-bin
+          path: dodep.bin
+          retention-days: 30
