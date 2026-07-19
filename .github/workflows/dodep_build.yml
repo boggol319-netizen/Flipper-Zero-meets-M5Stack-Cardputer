@@ -2,12 +2,18 @@ name: dodep_build
 
 on:
   workflow_dispatch:
+    inputs:
+      nfc_addr:
+        description: 'PN532 I2C address (0x28 default, or 0x24 for most PN532 boards)'
+        required: false
+        default: '0x28'
+        type: string
   push:
     branches: [dodep]
 
 jobs:
   build:
-    name: Build cardputer_adv (dodep pins)
+    name: Build cardputer_adv (dodep pins, NFC ${{ github.event.inputs.nfc_addr || '0x28' }})
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -77,9 +83,16 @@ jobs:
                "#define BOARD_PIN_CC1101_GDO0   13\n"),
               ("#define BOARD_PIN_NRF24_CSN     6\n",
                "#define BOARD_PIN_NRF24_CSN     9\n"),
-              ("#define BOARD_PIN_NRF24_CE      4\n",
-               "#define BOARD_PIN_NRF24_CE      8\n"),
-          ])
+               ("#define BOARD_PIN_NRF24_CE      4\n",
+                "#define BOARD_PIN_NRF24_CE      8\n"),
+           ])
+
+           # ---- PN532 NFC I2C address (most boards default 0x24, ADV header says 0x28) ----
+           nfc_addr = "${{ github.event.inputs.nfc_addr || '0x28' }}"
+           patch(board, [
+               ("#define BOARD_NFC_I2C_ADDR      0x28  /* WS1850S default; same as PN532 */\n",
+                "#define BOARD_NFC_I2C_ADDR      %s  /* PN532 I2C address (set via workflow input) */\n" % nfc_addr),
+           ])
 
           # ---- target_input.c: GPIO8/9 multiplexing (keyboard I2C <-> NRF24) ----
           ti = "targets/m5stack_cardputer_adv/target_input.c"
@@ -200,8 +213,10 @@ jobs:
       - name: Stage dodep.bin
         run: |
           if [ -f Flipper-cardputer_adv-merged.bin ]; then
-            cp Flipper-cardputer_adv-merged.bin dodep.bin
-            ls -lh dodep.bin
+            NFC="${{ github.event.inputs.nfc_addr || '0x28' }}"
+            BIN="dodep_nfc${NFC}.bin"
+            cp Flipper-cardputer_adv-merged.bin "$BIN"
+            ls -lh "$BIN"
           else
             echo "MERGED BINARY NOT FOUND"; ls -lh . ; exit 1
           fi
@@ -210,5 +225,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dodep-bin
-          path: dodep.bin
+          path: dodep_nfc*.bin
           retention-days: 30
