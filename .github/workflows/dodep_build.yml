@@ -85,6 +85,10 @@ jobs:
                "#define BOARD_PIN_NRF24_CSN     9\n"),
                ("#define BOARD_PIN_NRF24_CE      4\n",
                 "#define BOARD_PIN_NRF24_CE      8\n"),
+               ("#define BOARD_PIN_IR_RX         1\n",
+                "#define BOARD_PIN_IR_RX         UINT16_MAX\n"),
+               ("#define BOARD_HAS_IR_RX         1\n",
+                "#define BOARD_HAS_IR_RX         0\n"),
            ])
 
           # ---- PN532 NFC I2C address (most boards default 0x24, ADV header says 0x28) ----
