@@ -81,10 +81,12 @@ jobs:
                "#define BOARD_PIN_CC1101_CSN    15\n"),
               ("#define BOARD_PIN_CC1101_GDO0   5\n",
                "#define BOARD_PIN_CC1101_GDO0   13\n"),
-              ("#define BOARD_PIN_NRF24_CSN     6\n",
-               "#define BOARD_PIN_NRF24_CSN     9\n"),
+              # NRF24: CE/GDO0 → GPIO3 (LoRa RST), CSN → GPIO5 (LoRa CS)
+              # 2nd NRF module with external antenna replacing LoRa
+               ("#define BOARD_PIN_NRF24_CSN     6\n",
+                "#define BOARD_PIN_NRF24_CSN     5\n"),
                ("#define BOARD_PIN_NRF24_CE      4\n",
-                "#define BOARD_PIN_NRF24_CE      8\n"),
+                "#define BOARD_PIN_NRF24_CE      3\n"),
                ("#define BOARD_PIN_IR_RX         1\n",
                 "#define BOARD_PIN_IR_RX         UINT16_MAX\n"),
                ("#define BOARD_HAS_IR_RX         1\n",
