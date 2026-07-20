@@ -107,6 +107,8 @@ jobs:
                "/* Configure IRQ pin */\n#if defined(BOARD_PIN_NFC_IRQ) && BOARD_PIN_NFC_IRQ != UINT16_MAX\n"),
               ("/* Ensure RST is HIGH (PN532 powered from board power-on) */\n#ifdef BOARD_PIN_NFC_RST\n",
                "/* Ensure RST is HIGH (PN532 powered from board power-on) */\n#if defined(BOARD_PIN_NFC_RST) && BOARD_PIN_NFC_RST != UINT16_MAX\n"),
+              ("static bool pn532_wait_ready(uint32_t timeout_ms) {\n#ifdef BOARD_PIN_NFC_IRQ\n",
+               "static bool pn532_wait_ready(uint32_t timeout_ms) {\n#if defined(BOARD_PIN_NFC_IRQ) && BOARD_PIN_NFC_IRQ != UINT16_MAX\n"),
           ])
 
            # ---- target_input.c: GPIO8/9 multiplexing (keyboard I2C <-> NRF24) ----
